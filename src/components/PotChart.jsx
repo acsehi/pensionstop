@@ -9,6 +9,7 @@ import {
   Legend,
   ReferenceLine,
 } from 'recharts';
+import { STATE_PENSION_AGE } from '../utils/pensionCalc';
 
 const GBP = new Intl.NumberFormat('en-GB', {
   style: 'currency',
@@ -23,7 +24,7 @@ const GBP_FULL = new Intl.NumberFormat('en-GB', {
   maximumFractionDigits: 0,
 });
 
-function buildSeries({ startAge, startPot, retirementAge, targetAge, growthRate, annualDrawdown, lumpSumAmount }) {
+function buildSeries({ startAge, startPot, retirementAge, targetAge, growthRate, annualDrawdown, lumpSumAmount, statePension = 0, statePensionAge = Infinity }) {
   const data = [];
   let pot = startPot;
 
@@ -37,10 +38,12 @@ function buildSeries({ startAge, startPot, retirementAge, targetAge, growthRate,
       // Take lump sum at retirement
       pot -= lumpSumAmount;
       pot = Math.max(0, pot);
-      pot = pot * (1 + growthRate) - annualDrawdown;
+      const drawThisYear = age >= statePensionAge ? Math.max(0, annualDrawdown - statePension) : annualDrawdown;
+      pot = pot * (1 + growthRate) - drawThisYear;
     } else {
-      // Drawdown phase
-      pot = pot * (1 + growthRate) - annualDrawdown;
+      // Drawdown phase — reduce drawdown by state pension after state pension age
+      const drawThisYear = age >= statePensionAge ? Math.max(0, annualDrawdown - statePension) : annualDrawdown;
+      pot = pot * (1 + growthRate) - drawThisYear;
     }
 
     if (pot < 0) pot = 0;
@@ -77,9 +80,14 @@ export default function PotChart({ result, inputs }) {
     effectiveDrawdown,
     depletionAgeCurrentPot,
     targetAge,
+    includeStatePension,
+    statePension,
   } = result;
 
   const { currentAge, currentPot, retirementAge, annualDrawdown } = inputs;
+
+  const spAge = includeStatePension ? STATE_PENSION_AGE : Infinity;
+  const spAmount = includeStatePension ? statePension : 0;
 
   // Real series: pot in today's money (uses r_real = r)
   const targetRealSeries = buildSeries({
@@ -90,6 +98,8 @@ export default function PotChart({ result, inputs }) {
     growthRate: r,
     annualDrawdown: effectiveDrawdown,
     lumpSumAmount,
+    statePension: spAmount,
+    statePensionAge: spAge,
   });
 
   const currentEndAge = depletionAgeCurrentPot === Infinity
@@ -104,6 +114,8 @@ export default function PotChart({ result, inputs }) {
     growthRate: r,
     annualDrawdown,
     lumpSumAmount,
+    statePension: spAmount,
+    statePensionAge: spAge,
   });
 
   // Nominal series: real × (1 + inflation)^(age - currentAge)
@@ -160,6 +172,9 @@ export default function PotChart({ result, inputs }) {
           />
           <Tooltip content={<CustomTooltip />} />
           <ReferenceLine x={retirementAge} stroke="#e05c2a" strokeDasharray="4 3" label={{ value: `Retire ${retirementAge}`, position: 'top', fontSize: 11, fill: '#e05c2a' }} />
+          {includeStatePension && STATE_PENSION_AGE > retirementAge && STATE_PENSION_AGE < (depletionAgeCurrentPot === Infinity ? targetAge + 5 : Math.ceil(depletionAgeCurrentPot)) && (
+            <ReferenceLine x={STATE_PENSION_AGE} stroke="#7b3fa0" strokeDasharray="4 3" label={{ value: `State Pension ${STATE_PENSION_AGE}`, position: 'top', fontSize: 11, fill: '#7b3fa0' }} />
+          )}
           <Line type="monotone" dataKey="targetReal"    name="Target (today's £)"  stroke="#2a52a4" strokeWidth={2.5} dot={false} connectNulls={false} />
           <Line type="monotone" dataKey="targetNominal" name="Target (nominal £)"   stroke="#7b9de0" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls={false} />
           <Line type="monotone" dataKey="currentReal"   name="Current (today's £)"  stroke="#00a878" strokeWidth={2}   strokeDasharray="6 3" dot={false} connectNulls={false} />

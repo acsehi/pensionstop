@@ -9,6 +9,10 @@
 export const HIGHER_RATE_THRESHOLD = 50_270;
 export const TAX_FREE_LUMP_SUM = 268_275;
 
+// UK 2024/25 full new State Pension. Assumed to grow with inflation → constant in real terms.
+export const STATE_PENSION_AGE = 68;
+export const STATE_PENSION_ANNUAL = 221.20 * 52; // £11,502.40/yr
+
 /**
  * Present value of an annuity paying `annualAmount` for `years` at `growthRate`.
  * This is the pot needed at retirement to fund the drawdown for exactly `years`.
@@ -46,6 +50,7 @@ export function depletionYears(pot, annualDrawdown, growthRate) {
  * @param {number} inputs.annualDrawdown   - desired annual drawdown in £
  * @param {number} inputs.growthRatePct    - annual growth rate as percentage (e.g. 5 for 5%)
  * @param {number} inputs.lumpSumPct       - 0–25: % of pot to take tax-free at retirement
+ * @param {boolean} inputs.includeStatePension - whether to factor in state pension
  *
  * @returns {object} calculation results
  */
@@ -58,6 +63,7 @@ export function calculatePensionStop({
   growthRatePct,
   inflationPct = 0,
   lumpSumPct = 0,
+  includeStatePension = true,
 }) {
   const r_nominal = growthRatePct / 100;
   const inflation = inflationPct / 100;
@@ -66,6 +72,32 @@ export function calculatePensionStop({
   const p = lumpSumPct / 100;
   const yearsToRetirement = retirementAge - currentAge;
   const yearsInRetirement = targetAge - retirementAge;
+
+  // --- State pension phases ---
+  // Phase 1: retirement → state pension age (no state pension income)
+  // Phase 2: state pension age → target age (state pension offsets drawdown from pot)
+  const statePension = includeStatePension ? STATE_PENSION_ANNUAL : 0;
+  const phase1Years = includeStatePension
+    ? Math.max(0, Math.min(STATE_PENSION_AGE - retirementAge, yearsInRetirement))
+    : yearsInRetirement;
+  const phase2Years = includeStatePension
+    ? Math.max(0, targetAge - Math.max(retirementAge, STATE_PENSION_AGE))
+    : 0;
+
+  /**
+   * Two-phase present value of annuity at retirement.
+   * phase1: pot funds `amount1` for phase1Years
+   * phase2: pot funds `amount2` for phase2Years (discounted back through phase1)
+   */
+  function twoPhasePVA(amount1, amount2) {
+    const pv1 = presentValueOfAnnuity(amount1, r, phase1Years);
+    const pv2Phase2 = presentValueOfAnnuity(Math.max(0, amount2), r, phase2Years);
+    // Discount phase2 PV back to retirement date
+    const pv2AtRetirement = phase1Years > 0
+      ? pv2Phase2 / Math.pow(1 + r, phase1Years)
+      : pv2Phase2;
+    return pv1 + pv2AtRetirement;
+  }
 
   /**
    * Compute total pot and lump sum for a given drawdown base (PV of annuity).
@@ -83,15 +115,19 @@ export function calculatePensionStop({
   }
 
   // --- Criterion 1: Sufficiency ---
-  // Pot needed at retirement so the drawdown pot (after lump sum) funds annualDrawdown
-  // for exactly yearsInRetirement years.
-  const sufficiencyBase = presentValueOfAnnuity(annualDrawdown, r, yearsInRetirement);
+  // Phase 1: pot funds full drawdown. Phase 2: pot funds drawdown minus state pension.
+  const sufficiencyBase = twoPhasePVA(annualDrawdown, annualDrawdown - statePension);
   const suf = potWithLumpSum(sufficiencyBase);
   const sufficiencyPotAtRetirement = suf.total;
 
   // --- Criterion 2: 40% Tax Band ---
-  const taxBreachesThreshold = annualDrawdown > HIGHER_RATE_THRESHOLD;
-  const taxBase = presentValueOfAnnuity(HIGHER_RATE_THRESHOLD, r, yearsInRetirement);
+  // Phase 2 total income = drawdown + statePension; breach when that exceeds threshold.
+  // Effective drawdown threshold: phase1 = full threshold, phase2 = threshold - statePension.
+  const effectiveTaxThresholdPhase2 = HIGHER_RATE_THRESHOLD - statePension;
+  const taxBreachesThreshold = includeStatePension
+    ? annualDrawdown + statePension > HIGHER_RATE_THRESHOLD   // phase 2 is binding
+    : annualDrawdown > HIGHER_RATE_THRESHOLD;
+  const taxBase = twoPhasePVA(HIGHER_RATE_THRESHOLD, effectiveTaxThresholdPhase2);
   const tax = potWithLumpSum(taxBase);
   const taxPotAtRetirement = tax.total;
 
@@ -124,13 +160,17 @@ export function calculatePensionStop({
   const projectedPotAtRetirement = currentPot * Math.pow(1 + r, yearsToRetirement);
   const projectedLumpSum = p > 0 ? Math.min(p * projectedPotAtRetirement, TAX_FREE_LUMP_SUM) : 0;
   const projectedDrawdownPot = projectedPotAtRetirement - projectedLumpSum;
-  const yearsUntilDepletionCurrentPot = projectedDrawdownPot > 0
-    ? depletionYears(projectedDrawdownPot, annualDrawdown, r)
-    : 0;
-  const depletionAgeCurrentPot =
-    yearsUntilDepletionCurrentPot === Infinity
-      ? Infinity
-      : retirementAge + yearsUntilDepletionCurrentPot;
+
+  // Simulate year-by-year depletion of the current pot in retirement (accounts for two phases).
+  let simPot = projectedDrawdownPot;
+  let depletionAgeCurrentPot = Infinity;
+  for (let age = retirementAge; age <= 200; age++) {
+    if (simPot <= 0) { depletionAgeCurrentPot = age; break; }
+    const drawThisYear = includeStatePension && age >= STATE_PENSION_AGE
+      ? Math.max(0, annualDrawdown - statePension)
+      : annualDrawdown;
+    simPot = simPot * (1 + r) - drawThisYear;
+  }
 
   // --- Discount effective target back to today ---
   const stopPotToday =
@@ -163,6 +203,13 @@ export function calculatePensionStop({
     r,          // real growth rate
     r_nominal,
     inflation,
+
+    // State pension
+    includeStatePension,
+    statePension,
+    phase1Years,
+    phase2Years,
+    effectiveTaxThresholdPhase2,
 
     // Criterion 1
     sufficiencyPotAtRetirement,

@@ -1,4 +1,4 @@
-import { HIGHER_RATE_THRESHOLD } from '../utils/pensionCalc';
+import { HIGHER_RATE_THRESHOLD, STATE_PENSION_AGE } from '../utils/pensionCalc';
 
 const GBP = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 });
 
@@ -28,6 +28,11 @@ export default function ResultPanel({ result, inputs }) {
     r,
     r_nominal,
     inflation,
+    includeStatePension,
+    statePension,
+    phase1Years,
+    phase2Years,
+    effectiveTaxThresholdPhase2,
     sufficiencyPotAtRetirement,
     taxBreachesThreshold,
     taxPotAtRetirement,
@@ -136,6 +141,38 @@ export default function ResultPanel({ result, inputs }) {
               <td>All monetary figures below are in</td>
               <td><strong>today's money</strong></td>
             </tr>
+            <tr className="section-header">
+              <td colSpan={2}>State Pension</td>
+            </tr>
+            {includeStatePension ? (
+              <>
+                <tr>
+                  <td>State pension included</td>
+                  <td>Yes ✅ (age {STATE_PENSION_AGE})</td>
+                </tr>
+                <tr>
+                  <td>Annual state pension (today's money)</td>
+                  <td>{fmt(statePension)}/yr</td>
+                </tr>
+                <tr>
+                  <td>Phase 1: retirement → age {STATE_PENSION_AGE} (no state pension)</td>
+                  <td>{phase1Years} yrs — pot funds {fmt(annualDrawdown)}/yr</td>
+                </tr>
+                <tr>
+                  <td>Phase 2: age {STATE_PENSION_AGE} → target age (with state pension)</td>
+                  <td>{phase2Years} yrs — pot funds {fmt(Math.max(0, annualDrawdown - statePension))}/yr</td>
+                </tr>
+                <tr>
+                  <td>40% tax threshold for pot drawdown in phase 2</td>
+                  <td>{fmt(effectiveTaxThresholdPhase2)}/yr</td>
+                </tr>
+              </>
+            ) : (
+              <tr>
+                <td>State pension included</td>
+                <td>No ☐</td>
+              </tr>
+            )}
             <tr className="section-header">
               <td colSpan={2}>Criterion 1 – Sufficiency</td>
             </tr>

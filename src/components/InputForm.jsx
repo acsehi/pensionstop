@@ -6,14 +6,15 @@ const fmt = (n) => GBP.format(Math.round(n));
 const MAX_LUMP_SUM_PCT = 25;
 
 const DEFAULTS = {
-  currentAge: '41',
-  currentPot: '450000',
-  retirementAge: '58',
-  targetAge: '90',
-  annualDrawdown: '50000',
-  growthRatePct: '5',
-  inflationPct: '2.5',
-  lumpSumPct: '25',
+  currentAge: '',
+  currentPot: '',
+  retirementAge: '',
+  targetAge: '',
+  annualDrawdown: '',
+  growthRatePct: '',
+  inflationPct: '',
+  lumpSumPct: '',
+  includeStatePension: true,
 };
 
 const FIELDS = [
@@ -132,8 +133,9 @@ export default function InputForm({ onCalculate }) {
   }
 
   function handleChange(e) {
-    const { name, value } = e.target;
-    setValues((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    const newVal = type === 'checkbox' ? checked : value;
+    setValues((prev) => ({ ...prev, [name]: newVal }));
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }));
     }
@@ -155,6 +157,7 @@ export default function InputForm({ onCalculate }) {
       growthRatePct: Number(values.growthRatePct),
       inflationPct: Number(values.inflationPct),
       lumpSumPct: values.lumpSumPct === '' ? 0 : Number(values.lumpSumPct),
+      includeStatePension: values.includeStatePension,
     });
   }
 
@@ -217,6 +220,20 @@ export default function InputForm({ onCalculate }) {
             {errors.lumpSumPct}
           </p>
         )}
+      </div>
+
+      {/* State pension toggle */}
+      <div className="field field--checkbox">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            name="includeStatePension"
+            checked={values.includeStatePension}
+            onChange={handleChange}
+          />
+          Include State Pension{' '}
+          <span className="label-hint">(age 68, £11,502/yr — grows with inflation)</span>
+        </label>
       </div>
 
       <button type="submit" className="btn-calculate">
