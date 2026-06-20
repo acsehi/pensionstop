@@ -1,0 +1,360 @@
+/* ============================================================
+   Base & Reset
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-bg: #f4f6fb;
+  --color-surface: #ffffff;
+  --color-primary: #1e3a6e;
+  --color-primary-light: #2a52a4;
+  --color-accent: #00a878;
+  --color-accent-stop: #e05c2a;
+  --color-warning-bg: #fff8e1;
+  --color-warning-border: #f5c400;
+  --color-tax-badge: #c0392b;
+  --color-suf-badge: #1a7a4a;
+  --color-text: #1a1a2e;
+  --color-muted: #6b7280;
+  --color-border: #dde1ea;
+  --color-error: #d32f2f;
+  --color-highlight: #eef2ff;
+  --radius: 10px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  font-size: 16px;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  background: var(--color-primary);
+  color: #fff;
+  padding: 2rem 1.5rem 1.5rem;
+  text-align: center;
+}
+
+.app-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.tagline {
+  margin-top: 0.4rem;
+  font-size: 1rem;
+  opacity: 0.85;
+}
+
+.app-main {
+  flex: 1;
+  max-width: 720px;
+  width: 100%;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.app-footer {
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   Form Section
+   ============================================================ */
+.form-section {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.75rem;
+}
+
+.form-section h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 1.25rem;
+}
+
+.input-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: #fff;
+  transition: border-color 0.2s;
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--color-primary-light);
+  box-shadow: 0 0 0 3px rgba(42, 82, 164, 0.12);
+}
+
+.field--error .input-wrapper {
+  border-color: var(--color-error);
+}
+
+.input-adornment {
+  padding: 0 0.65rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  background: #f4f6fb;
+  border-right: 1.5px solid var(--color-border);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.input-adornment--suffix {
+  border-right: none;
+  border-left: 1.5px solid var(--color-border);
+}
+
+.input-wrapper input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 0.55rem 0.75rem;
+  font-size: 1rem;
+  color: var(--color-text);
+  background: transparent;
+  width: 100%;
+}
+
+/* Remove number spinners */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+input[type=number] { -moz-appearance: textfield; }
+
+.field-error {
+  font-size: 0.8rem;
+  color: var(--color-error);
+}
+
+.btn-calculate {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  align-self: flex-start;
+}
+
+.btn-calculate:hover {
+  background: var(--color-primary-light);
+}
+
+.btn-calculate:active {
+  transform: scale(0.98);
+}
+
+/* ============================================================
+   Result Panel
+   ============================================================ */
+.result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.recommendation {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.75rem;
+}
+
+.recommendation--continue {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.recommendation--stop {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.recommendation h2 {
+  font-size: 1.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.stop-amount {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0.25rem 0 0.5rem;
+  letter-spacing: -1px;
+}
+
+.stop-sub {
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.badge--tax {
+  background: var(--color-tax-badge);
+}
+
+.badge--sufficiency {
+  background: var(--color-suf-badge);
+}
+
+/* Alert */
+.alert {
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.alert--warning {
+  background: var(--color-warning-bg);
+  border: 1.5px solid var(--color-warning-border);
+  color: #5a4000;
+}
+
+.alert--warning p {
+  margin-top: 0.5rem;
+}
+
+/* Breakdown table */
+.breakdown {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.breakdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 1rem;
+}
+
+.breakdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.breakdown td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.breakdown td:last-child {
+  text-align: right;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.breakdown tr.section-header td {
+  background: #f0f3fa;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-primary);
+  border-bottom: none;
+  padding-top: 0.75rem;
+}
+
+.breakdown tr.highlight td {
+  background: var(--color-highlight);
+  font-weight: 600;
+}
+
+/* Disclaimer */
+.disclaimer {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 500px) {
+  .stop-amount {
+    font-size: 1.8rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .form-section,
+  .breakdown,
+  .recommendation {
+    padding: 1.25rem;
+  }
+
+  .btn-calculate {
+    width: 100%;
+    text-align: center;
+  }
+}
