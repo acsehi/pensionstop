@@ -12,6 +12,7 @@ const DEFAULTS = {
   targetAge: '90',
   annualDrawdown: '50000',
   growthRatePct: '5',
+  inflationPct: '2.5',
   lumpSumPct: '25',
 };
 
@@ -55,6 +56,7 @@ const FIELDS = [
   {
     id: 'annualDrawdown',
     label: 'Expected annual drawdown in retirement',
+    hint: "in today's money — grows with inflation each year",
     type: 'number',
     min: 1,
     placeholder: 'e.g. 25000',
@@ -63,12 +65,23 @@ const FIELDS = [
   },
   {
     id: 'growthRatePct',
-    label: 'Expected pension pot growth rate',
+    label: 'Expected pension pot growth rate (nominal)',
     type: 'number',
     min: 0,
     max: 30,
     step: 0.1,
     placeholder: 'e.g. 5',
+    unit: '%/year',
+    suffix: true,
+  },
+  {
+    id: 'inflationPct',
+    label: 'Expected inflation rate',
+    type: 'number',
+    min: 0,
+    max: 20,
+    step: 0.1,
+    placeholder: 'e.g. 2.5',
     unit: '%/year',
     suffix: true,
   },
@@ -86,6 +99,7 @@ export default function InputForm({ onCalculate }) {
     const pot = Number(vals.currentPot);
     const drawdown = Number(vals.annualDrawdown);
     const rate = Number(vals.growthRatePct);
+    const inflation = Number(vals.inflationPct);
     const ls = vals.lumpSumPct === '' ? 0 : Number(vals.lumpSumPct);
 
     if (!vals.currentAge || isNaN(age) || age < 16 || age > 74)
@@ -104,6 +118,10 @@ export default function InputForm({ onCalculate }) {
       errs.annualDrawdown = 'Enter a positive annual drawdown amount.';
     if (vals.growthRatePct === '' || isNaN(rate) || rate < 0 || rate > 30)
       errs.growthRatePct = 'Enter a growth rate between 0% and 30%.';
+    if (vals.inflationPct === '' || isNaN(inflation) || inflation < 0 || inflation > 20)
+      errs.inflationPct = 'Enter an inflation rate between 0% and 20%.';
+    if (!errs.growthRatePct && !errs.inflationPct && inflation >= rate)
+      errs.inflationPct = 'Inflation must be lower than the growth rate.';
 
     if (vals.lumpSumPct !== '' && !isNaN(ls)) {
       if (ls < 0 || ls > MAX_LUMP_SUM_PCT)
@@ -135,15 +153,19 @@ export default function InputForm({ onCalculate }) {
       targetAge: Number(values.targetAge),
       annualDrawdown: Number(values.annualDrawdown),
       growthRatePct: Number(values.growthRatePct),
+      inflationPct: Number(values.inflationPct),
       lumpSumPct: values.lumpSumPct === '' ? 0 : Number(values.lumpSumPct),
     });
   }
 
   return (
     <form className="input-form" onSubmit={handleSubmit} noValidate>
-      {FIELDS.map(({ id, label, type, min, max, step, placeholder, unit, prefix, suffix }) => (
+      {FIELDS.map(({ id, label, hint, type, min, max, step, placeholder, unit, prefix, suffix }) => (
         <div key={id} className={`field${errors[id] ? ' field--error' : ''}`}>
-          <label htmlFor={id}>{label}</label>
+          <label htmlFor={id}>
+            {label}
+            {hint && <span className="label-hint"> ({hint})</span>}
+          </label>
           <div className="input-wrapper">
             {prefix && <span className="input-adornment input-adornment--prefix">£</span>}
             <input

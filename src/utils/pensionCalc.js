@@ -56,9 +56,13 @@ export function calculatePensionStop({
   targetAge,
   annualDrawdown,
   growthRatePct,
+  inflationPct = 0,
   lumpSumPct = 0,
 }) {
-  const r = growthRatePct / 100;
+  const r_nominal = growthRatePct / 100;
+  const inflation = inflationPct / 100;
+  // All calculations in real terms (today's money)
+  const r = (1 + r_nominal) / (1 + inflation) - 1;
   const p = lumpSumPct / 100;
   const yearsToRetirement = retirementAge - currentAge;
   const yearsInRetirement = targetAge - retirementAge;
@@ -136,10 +140,29 @@ export function calculatePensionStop({
 
   const alreadyAtTarget = currentPot >= stopPotToday;
 
+  // --- Nominal values at retirement (future £) ---
+  // These are for display clarity only; calculations stay in real terms.
+  const inflationFactor = Math.pow(1 + inflation, yearsToRetirement);
+  const nominalDrawdownAtRetirement = annualDrawdown * inflationFactor;
+  const nominalThresholdAtRetirement = HIGHER_RATE_THRESHOLD * inflationFactor;
+  const nominalEffectiveDrawdown = effectiveDrawdown * inflationFactor;
+  const nominalLumpSumAmount = lumpSumAmount * inflationFactor;
+
+  // --- Perpetuity pot (infinite drawdown) ---
+  // The pot at which annual real growth equals the drawdown — money never runs out.
+  // Formula: P = D / r  (only meaningful when r > 0)
+  const infinitePotAtRetirement = r > 0 ? annualDrawdown / r : Infinity;
+  const infinitePotToday =
+    infinitePotAtRetirement === Infinity || yearsToRetirement <= 0
+      ? infinitePotAtRetirement
+      : infinitePotAtRetirement / Math.pow(1 + r, yearsToRetirement);
+
   return {
     yearsToRetirement,
     yearsInRetirement,
-    r,
+    r,          // real growth rate
+    r_nominal,
+    inflation,
 
     // Criterion 1
     sufficiencyPotAtRetirement,
@@ -169,6 +192,16 @@ export function calculatePensionStop({
 
     // Current trajectory
     projectedPotAtRetirement,
+
+    // Nominal (future £) at retirement
+    nominalDrawdownAtRetirement,
+    nominalThresholdAtRetirement,
+    nominalEffectiveDrawdown,
+    nominalLumpSumAmount,
+
+    // Perpetuity (infinite drawdown) pot
+    infinitePotAtRetirement,
+    infinitePotToday,
 
     // Final recommendation
     alreadyAtTarget,
