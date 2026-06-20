@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import InputForm from './components/InputForm';
 import ResultPanel from './components/ResultPanel';
+import PotChart from './components/PotChart';
 import { calculatePensionStop } from './utils/pensionCalc';
 import './styles/app.css';
 
@@ -31,6 +32,7 @@ export default function App() {
 
         {result && (
           <div id="results">
+            <PotChart result={result} inputs={lastInputs} />
             <ResultPanel result={result} inputs={lastInputs} />
           </div>
         )}

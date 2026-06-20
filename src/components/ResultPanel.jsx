@@ -24,6 +24,7 @@ export default function ResultPanel({ result, inputs }) {
 
   const {
     yearsToRetirement,
+    yearsInRetirement,
     r,
     sufficiencyPotAtRetirement,
     taxBreachesThreshold,
@@ -31,7 +32,12 @@ export default function ResultPanel({ result, inputs }) {
     effectivePotAtRetirement,
     effectiveDrawdown,
     triggeringCriterion,
-    depletionAgeAtTarget,
+    lumpSumPct,
+    lumpSumAmount,
+    lumpSumCapped,
+    drawdownPotAtRetirement,
+    targetAge,
+    actualDepletionAge,
     depletionAgeCurrentPot,
     stopPotToday,
     projectedPotAtRetirement,
@@ -40,7 +46,6 @@ export default function ResultPanel({ result, inputs }) {
 
   const { currentPot, retirementAge, annualDrawdown, growthRatePct } = inputs;
 
-  const depletionLabel = fmtAge(depletionAgeAtTarget);
   const currentDepletionLabel = fmtAge(depletionAgeCurrentPot);
 
   return (
@@ -55,8 +60,7 @@ export default function ResultPanel({ result, inputs }) {
               target of <strong>{fmt(stopPotToday)}</strong>. If left to grow at {growthRatePct}%/yr
               it will reach <strong>{fmt(projectedPotAtRetirement)}</strong> by age {retirementAge},
               funding your drawdown until <strong>{currentDepletionLabel}</strong>.
-            </p>
-          </>
+            </p>          </>
         ) : (
           <>
             <h2>🎯 Stop Contributing When Your Pot Reaches</h2>
@@ -66,8 +70,9 @@ export default function ResultPanel({ result, inputs }) {
             </p>
             <p>
               The pot will grow to <strong>{fmt(effectivePotAtRetirement)}</strong> by age{' '}
-              {retirementAge} (in {yearsToRetirement} yrs) and fund{' '}
-              {fmt(effectiveDrawdown)}/yr until <strong>{depletionLabel}</strong>.
+              {retirementAge} (in {yearsToRetirement} yrs){lumpSumPct > 0 && (
+                <>, of which <strong>{fmt(lumpSumAmount)}</strong> ({lumpSumPct}%{lumpSumCapped ? ', capped at HMRC limit' : ''}) is taken tax-free,</>
+              )} and fund {fmt(effectiveDrawdown)}/yr until <strong>age {targetAge}</strong>.
             </p>
           </>
         )}
@@ -98,13 +103,23 @@ export default function ResultPanel({ result, inputs }) {
               <td>Years to retirement</td>
               <td>{yearsToRetirement}</td>
             </tr>
+            <tr>
+              <td>Years in retirement (to target age {targetAge})</td>
+              <td>{yearsInRetirement}</td>
+            </tr>
             <tr className="section-header">
-              <td colSpan={2}>Criterion 1 – Sufficiency (perpetuity)</td>
+              <td colSpan={2}>Criterion 1 – Sufficiency</td>
             </tr>
             <tr>
-              <td>Min pot at retirement to sustain {fmt(annualDrawdown)}/yr indefinitely</td>
+              <td>Pot needed at retirement to fund {fmt(annualDrawdown)}/yr until age {targetAge}</td>
               <td>{fmt(sufficiencyPotAtRetirement)}</td>
             </tr>
+            {lumpSumPct > 0 && (
+              <tr>
+                <td>Includes tax-free lump sum ({lumpSumPct}%{lumpSumCapped ? ', capped' : ''})</td>
+                <td>+ {fmt(lumpSumAmount)}</td>
+              </tr>
+            )}
             <tr>
               <td>Equivalent pot in today's money</td>
               <td>{fmt(sufficiencyPotAtRetirement / Math.pow(1 + r, yearsToRetirement))}</td>
@@ -119,7 +134,7 @@ export default function ResultPanel({ result, inputs }) {
             {taxBreachesThreshold && (
               <>
                 <tr>
-                  <td>Max tax-efficient pot at retirement (sustains {fmt(HIGHER_RATE_THRESHOLD)}/yr)</td>
+                  <td>Max tax-efficient pot at retirement ({fmt(HIGHER_RATE_THRESHOLD)}/yr to age {targetAge})</td>
                   <td>{fmt(taxPotAtRetirement)}</td>
                 </tr>
                 <tr>
@@ -140,9 +155,21 @@ export default function ResultPanel({ result, inputs }) {
               <td><CriterionBadge criterion={triggeringCriterion} /></td>
             </tr>
             <tr className="highlight">
-              <td>Money runs out at</td>
-              <td>{depletionLabel}</td>
+              <td>Target: money runs out at</td>
+              <td>age {targetAge}</td>
             </tr>
+            {lumpSumPct > 0 && (
+              <tr>
+                <td>Tax-free lump sum at retirement ({lumpSumPct}%{lumpSumCapped ? ', capped at £268,275' : ''})</td>
+                <td>{fmt(lumpSumAmount)}</td>
+              </tr>
+            )}
+            {lumpSumPct > 0 && (
+              <tr>
+                <td>Pot remaining for drawdown after lump sum</td>
+                <td>{fmt(drawdownPotAtRetirement)}</td>
+              </tr>
+            )}
             <tr>
               <td>Your current pot</td>
               <td>{fmt(currentPot)}</td>
@@ -159,6 +186,12 @@ export default function ResultPanel({ result, inputs }) {
               <td>Current pot funds drawdown until</td>
               <td>{currentDepletionLabel}</td>
             </tr>
+            {actualDepletionAge !== Infinity && Math.round(actualDepletionAge) !== targetAge && (
+              <tr>
+                <td>Actual depletion age (calc check)</td>
+                <td>age {Math.round(actualDepletionAge)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
