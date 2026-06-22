@@ -97,15 +97,33 @@ export default function ResultPanel({ result, inputs }) {
       {taxBreachesThreshold && (
         <div className="alert alert--warning">
           <strong>⚠️ Tax Band Warning</strong>
-          <p>
-            Your desired drawdown of <strong>{fmt(annualDrawdown)}/year</strong> exceeds the UK
-            higher-rate tax threshold of <strong>{fmt(HIGHER_RATE_THRESHOLD)}/year</strong>. Any
-            drawdown above this amount will be taxed at 40%.
-          </p>
-          <p>
-            The stop-pot target has been capped so your retirement income stays within the basic-rate
-            band (max {fmt(HIGHER_RATE_THRESHOLD)}/year).
-          </p>
+          {includeStatePension ? (
+            <>
+              <p>
+                Your desired drawdown of <strong>{fmt(annualDrawdown)}/year</strong> plus the state
+                pension of <strong>{fmt(statePension)}/year</strong> gives a combined retirement
+                income of <strong>{fmt(annualDrawdown + statePension)}/year</strong>, which exceeds
+                the UK higher-rate tax threshold of <strong>{fmt(HIGHER_RATE_THRESHOLD)}/year</strong>.
+                Any income above this threshold will be taxed at 40%.
+              </p>
+              <p>
+                The stop-pot target has been capped so your total retirement income (drawdown + state
+                pension) stays within the basic-rate band (max {fmt(HIGHER_RATE_THRESHOLD)}/year).
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                Your desired drawdown of <strong>{fmt(annualDrawdown)}/year</strong> exceeds the UK
+                higher-rate tax threshold of <strong>{fmt(HIGHER_RATE_THRESHOLD)}/year</strong>. Any
+                drawdown above this amount will be taxed at 40%.
+              </p>
+              <p>
+                The stop-pot target has been capped so your retirement income stays within the basic-rate
+                band (max {fmt(HIGHER_RATE_THRESHOLD)}/year).
+              </p>
+            </>
+          )}
         </div>
       )}
 
