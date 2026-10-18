@@ -383,6 +383,35 @@ input[type=number] { -moz-appearance: textfield; }
   font-weight: 600;
 }
 
+.cell-note {
+  font-size: 0.82em;
+  font-style: italic;
+  color: var(--color-muted);
+}
+
+/* Assumptions */
+.assumptions {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.5rem;
+  font-size: 0.85rem;
+}
+
+.assumptions summary {
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.assumptions ul {
+  margin-top: 0.75rem;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 /* Disclaimer */
 .disclaimer {
   font-size: 0.78rem;

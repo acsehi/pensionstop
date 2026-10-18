@@ -1,22 +1,58 @@
 /**
  * UK DC Pension "Stop Contributing" Calculator
  *
- * All monetary values in £. Growth rate as a decimal (e.g. 0.05 for 5%).
+ * All calculations run in real terms (today's money) using the real growth rate
+ * r = (1 + nominal growth) / (1 + inflation) − 1. Retirement is modelled year by year,
+ * with withdrawals taken at the end of each year.
  *
- * UK 2024/25 higher-rate income tax threshold (personal allowance + basic rate band).
- * Pension drawdown above this amount is taxed at 40%.
+ * "Income" means gross (before-tax) retirement income: pension withdrawals plus the
+ * State Pension, when included. The State Pension reduces what the pot has to fund.
+ *
+ * Rules and rates are for the 2026/27 tax year (England, Wales and Northern Ireland).
  */
-export const HIGHER_RATE_THRESHOLD = 50_270;
-export const TAX_FREE_LUMP_SUM = 268_275;
 
-// UK 2024/25 full new State Pension. Assumed to grow with inflation → constant in real terms.
-export const STATE_PENSION_AGE = 68;
-export const STATE_PENSION_ANNUAL = 221.20 * 52; // £11,502.40/yr
+export const TAX_YEAR = '2026/27';
+
+// Higher-rate threshold (Personal Allowance + basic-rate band). Frozen in cash terms until
+// 5 April 2031, so it falls in real terms until then; assumed to rise with inflation afterwards.
+export const HIGHER_RATE_THRESHOLD = 50_270;
+export const THRESHOLD_FREEZE_END = new Date(2031, 3, 6);
+
+// Lump Sum Allowance: lifetime cap on tax-free cash. Fixed in cash terms (not index-linked).
+export const TAX_FREE_LUMP_SUM = 268_275;
+export const MAX_TAX_FREE_PCT = 25;
+
+// Normal minimum pension age: 55, rising to 57 from 6 April 2028.
+export const NMPA_RISE_DATE = new Date(2028, 3, 6);
+
+// Full new State Pension (2026/27). Assumed to rise with inflation → constant in real terms.
+export const STATE_PENSION_WEEKLY = 241.3;
+export const STATE_PENSION_ANNUAL = STATE_PENSION_WEEKLY * 52; // £12,547.60/yr
+
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+const yearsBetween = (from, to) => (to - from) / MS_PER_YEAR;
 
 /**
- * Present value of an annuity paying `annualAmount` for `years` at `growthRate`.
- * This is the pot needed at retirement to fund the drawdown for exactly `years`.
- * Handles growthRate === 0 as linear (pot = annualAmount * years).
+ * State Pension age under current legislation, using the latest birth date consistent with
+ * `currentAge` (the conservative choice). Transitional cohorts are rounded up to a whole year:
+ *   born before 6 Apr 1960 → 66 · 6 Apr 1960 – 5 Apr 1977 → 67 · on/after 6 Apr 1977 → 68
+ */
+export function statePensionAge(currentAge, now = new Date()) {
+  const latestBirthDate = new Date(now.getFullYear() - currentAge, now.getMonth(), now.getDate());
+  if (latestBirthDate < new Date(1960, 3, 6)) return 66;
+  if (latestBirthDate < new Date(1977, 3, 6)) return 67;
+  return 68;
+}
+
+/** Normal minimum pension age at the planned retirement date: 55, or 57 from 6 April 2028. */
+export function minimumPensionAge(currentAge, retirementAge, now = new Date()) {
+  const retirementDate = new Date(now.getTime() + (retirementAge - currentAge) * MS_PER_YEAR);
+  return retirementDate < NMPA_RISE_DATE ? 55 : 57;
+}
+
+/**
+ * Present value of an annuity paying `annualAmount` at the end of each year for `years`.
+ * Handles growthRate === 0 as linear (annualAmount * years).
  */
 export function presentValueOfAnnuity(annualAmount, growthRate, years) {
   if (years <= 0) return 0;
@@ -24,19 +60,37 @@ export function presentValueOfAnnuity(annualAmount, growthRate, years) {
   return annualAmount * (1 - Math.pow(1 + growthRate, -years)) / growthRate;
 }
 
+/** Present value of `payments[k]` paid at the end of year k + 1. */
+function presentValue(payments, r) {
+  return payments.reduce((pv, amount, k) => pv + amount / Math.pow(1 + r, k + 1), 0);
+}
+
 /**
- * How many years until a pot of `pot` is fully depleted, drawing `annualDrawdown`
- * per year while growing at `growthRate` per year.
- *
- * Returns Infinity when annual returns on the pot meet or exceed the drawdown.
- * Formula (r > 0):  N = -ln(1 - pot·r / drawdown) / ln(1 + r)
+ * Age (fractional) at which a pot starting at `startAge` can no longer fund
+ * `withdrawalAt(age)`, or Infinity if it lasts beyond `maxAge`.
  */
-export function depletionYears(pot, annualDrawdown, growthRate) {
-  if (annualDrawdown <= 0) return Infinity;
-  if (growthRate <= 0) return pot / annualDrawdown;
-  const ratio = (pot * growthRate) / annualDrawdown;
-  if (ratio >= 1) return Infinity;
-  return -Math.log(1 - ratio) / Math.log(1 + growthRate);
+function depletionAge(pot, startAge, r, withdrawalAt, maxAge = 200) {
+  for (let age = startAge; age < maxAge; age++) {
+    const available = pot * (1 + r);
+    const withdrawal = withdrawalAt(age);
+    if (withdrawal > 0 && available < withdrawal * (1 - 1e-9)) {
+      return age + Math.max(0, available) / withdrawal;
+    }
+    pot = available - withdrawal;
+  }
+  return Infinity;
+}
+
+/** Year-by-year pot size (real terms), taking the lump sum and withdrawals from retirement. */
+function potSeries({ startAge, endAge, startPot, retirementAge, lumpSum, r, withdrawalAt }) {
+  const series = [];
+  let pot = startPot;
+  for (let age = startAge; age <= endAge; age++) {
+    series.push({ age, pot: Math.max(0, pot) });
+    if (age === retirementAge) pot -= lumpSum;
+    pot = Math.max(0, pot * (1 + r) - (age >= retirementAge ? withdrawalAt(age) : 0));
+  }
+  return series;
 }
 
 /**
@@ -47,10 +101,13 @@ export function depletionYears(pot, annualDrawdown, growthRate) {
  * @param {number} inputs.currentPot       - current pot size in £
  * @param {number} inputs.retirementAge
  * @param {number} inputs.targetAge        - age at which the pot should run out
- * @param {number} inputs.annualDrawdown   - desired annual drawdown in £
- * @param {number} inputs.growthRatePct    - annual growth rate as percentage (e.g. 5 for 5%)
- * @param {number} inputs.lumpSumPct       - 0–25: % of pot to take tax-free at retirement
- * @param {boolean} inputs.includeStatePension - whether to factor in state pension
+ * @param {number} inputs.annualDrawdown   - desired annual income before tax, in today's £,
+ *                                           including the State Pension when included
+ * @param {number} inputs.growthRatePct    - nominal annual growth after fees (e.g. 5 for 5%)
+ * @param {number} inputs.inflationPct     - annual inflation (e.g. 2.5 for 2.5%)
+ * @param {number} inputs.lumpSumPct       - 0–25: % of pot taken as tax-free cash at retirement
+ * @param {boolean} inputs.includeStatePension - whether to factor in the State Pension
+ * @param {Date}   [inputs.now]            - today's date (for date-dependent rules)
  *
  * @returns {object} calculation results
  */
@@ -64,6 +121,7 @@ export function calculatePensionStop({
   inflationPct = 0,
   lumpSumPct = 0,
   includeStatePension = true,
+  now = new Date(),
 }) {
   const r_nominal = growthRatePct / 100;
   const inflation = inflationPct / 100;
@@ -72,162 +130,190 @@ export function calculatePensionStop({
   const p = lumpSumPct / 100;
   const yearsToRetirement = retirementAge - currentAge;
   const yearsInRetirement = targetAge - retirementAge;
-
-  // --- State pension phases ---
-  // Phase 1: retirement → state pension age (no state pension income)
-  // Phase 2: state pension age → target age (state pension offsets drawdown from pot)
-  const statePension = includeStatePension ? STATE_PENSION_ANNUAL : 0;
-  const phase1Years = includeStatePension
-    ? Math.max(0, Math.min(STATE_PENSION_AGE - retirementAge, yearsInRetirement))
-    : yearsInRetirement;
-  const phase2Years = includeStatePension
-    ? Math.max(0, targetAge - Math.max(retirementAge, STATE_PENSION_AGE))
-    : 0;
-
-  /**
-   * Two-phase present value of annuity at retirement.
-   * phase1: pot funds `amount1` for phase1Years
-   * phase2: pot funds `amount2` for phase2Years (discounted back through phase1)
-   */
-  function twoPhasePVA(amount1, amount2) {
-    const pv1 = presentValueOfAnnuity(amount1, r, phase1Years);
-    const pv2Phase2 = presentValueOfAnnuity(Math.max(0, amount2), r, phase2Years);
-    // Discount phase2 PV back to retirement date
-    const pv2AtRetirement = phase1Years > 0
-      ? pv2Phase2 / Math.pow(1 + r, phase1Years)
-      : pv2Phase2;
-    return pv1 + pv2AtRetirement;
-  }
-
-  /**
-   * Compute total pot and lump sum for a given drawdown base (PV of annuity).
-   * The lump sum is taken from the pot first; the remainder funds the drawdown.
-   *
-   * Let L = lump sum, D = drawdown base (pot needed after lump sum).
-   * Total pot T = D + L,  L = p * T  →  T = D / (1 - p),  L = p*D / (1-p)
-   * Capped at TAX_FREE_LUMP_SUM.
-   */
-  function potWithLumpSum(drawdownBase) {
-    if (p === 0) return { total: drawdownBase, lumpSum: 0 };
-    const uncappedLumpSum = (p * drawdownBase) / (1 - p);
-    const lumpSum = Math.min(uncappedLumpSum, TAX_FREE_LUMP_SUM);
-    return { total: drawdownBase + lumpSum, lumpSum };
-  }
-
-  // --- Criterion 1: Sufficiency ---
-  // Phase 1: pot funds full drawdown. Phase 2: pot funds drawdown minus state pension.
-  const sufficiencyBase = twoPhasePVA(annualDrawdown, annualDrawdown - statePension);
-  const suf = potWithLumpSum(sufficiencyBase);
-  const sufficiencyPotAtRetirement = suf.total;
-
-  // --- Criterion 2: 40% Tax Band ---
-  // Phase 2 total income = drawdown + statePension; breach when that exceeds threshold.
-  // Effective drawdown threshold: phase1 = full threshold, phase2 = threshold - statePension.
-  const effectiveTaxThresholdPhase2 = HIGHER_RATE_THRESHOLD - statePension;
-  const taxBreachesThreshold = includeStatePension
-    ? annualDrawdown + statePension > HIGHER_RATE_THRESHOLD   // phase 2 is binding
-    : annualDrawdown > HIGHER_RATE_THRESHOLD;
-  const taxBase = twoPhasePVA(HIGHER_RATE_THRESHOLD, effectiveTaxThresholdPhase2);
-  const tax = potWithLumpSum(taxBase);
-  const taxPotAtRetirement = tax.total;
-
-  // --- Effective target ---
-  const effectivePotAtRetirement = taxBreachesThreshold
-    ? Math.min(sufficiencyPotAtRetirement, taxPotAtRetirement)
-    : sufficiencyPotAtRetirement;
-
-  const triggeringCriterion = taxBreachesThreshold
-    ? (taxPotAtRetirement <= sufficiencyPotAtRetirement ? 'tax' : 'sufficiency')
-    : 'sufficiency';
-
-  const lumpSumAmount = triggeringCriterion === 'tax' ? tax.lumpSum : suf.lumpSum;
-  const lumpSumCapped = lumpSumAmount >= TAX_FREE_LUMP_SUM && p > 0;
-
-  const effectiveDrawdown =
-    triggeringCriterion === 'tax' ? HIGHER_RATE_THRESHOLD : annualDrawdown;
-
-  // Pot available for drawdown after lump sum
-  const drawdownPotAtRetirement = effectivePotAtRetirement - lumpSumAmount;
-
-  // Actual depletion age of the drawdown pot (should be ≈ targetAge; useful as sanity check)
-  const actualYearsUntilDepletion = depletionYears(drawdownPotAtRetirement, effectiveDrawdown, r);
-  const actualDepletionAge =
-    actualYearsUntilDepletion === Infinity
-      ? Infinity
-      : retirementAge + actualYearsUntilDepletion;
-
-  // --- Current projected pot and its depletion age ---
-  const projectedPotAtRetirement = currentPot * Math.pow(1 + r, yearsToRetirement);
-  const projectedLumpSum = p > 0 ? Math.min(p * projectedPotAtRetirement, TAX_FREE_LUMP_SUM) : 0;
-  const projectedDrawdownPot = projectedPotAtRetirement - projectedLumpSum;
-
-  // Simulate year-by-year depletion of the current pot in retirement (accounts for two phases).
-  let simPot = projectedDrawdownPot;
-  let depletionAgeCurrentPot = Infinity;
-  for (let age = retirementAge; age <= 200; age++) {
-    if (simPot <= 0) { depletionAgeCurrentPot = age; break; }
-    const drawThisYear = includeStatePension && age >= STATE_PENSION_AGE
-      ? Math.max(0, annualDrawdown - statePension)
-      : annualDrawdown;
-    simPot = simPot * (1 + r) - drawThisYear;
-  }
-
-  // --- Discount effective target back to today ---
-  const stopPotToday =
-    yearsToRetirement > 0
-      ? effectivePotAtRetirement / Math.pow(1 + r, yearsToRetirement)
-      : effectivePotAtRetirement;
-
-  const alreadyAtTarget = currentPot >= stopPotToday;
-
-  // --- Nominal values at retirement (future £) ---
-  // These are for display clarity only; calculations stay in real terms.
   const inflationFactor = Math.pow(1 + inflation, yearsToRetirement);
-  const nominalDrawdownAtRetirement = annualDrawdown * inflationFactor;
-  const nominalThresholdAtRetirement = HIGHER_RATE_THRESHOLD * inflationFactor;
-  const nominalEffectiveDrawdown = effectiveDrawdown * inflationFactor;
-  const nominalLumpSumAmount = lumpSumAmount * inflationFactor;
+  const discountToToday = (amountAtRetirement) =>
+    amountAtRetirement / Math.pow(1 + r, yearsToRetirement);
+
+  // --- Rules over time, in today's money ---
+  const spAge = statePensionAge(currentAge, now);
+  const statePension = includeStatePension ? STATE_PENSION_ANNUAL : 0;
+  const statePensionAt = (age) => (includeStatePension && age >= spAge ? STATE_PENSION_ANNUAL : 0);
+
+  const frozenYears = Math.max(0, yearsBetween(now, THRESHOLD_FREEZE_END));
+  const thresholdAt = (age) =>
+    HIGHER_RATE_THRESHOLD / Math.pow(1 + inflation, Math.min(age - currentAge, frozenYears));
+
+  // The Lump Sum Allowance is fixed in cash terms, so it is worth less in today's money by retirement.
+  const lumpSumCap = TAX_FREE_LUMP_SUM / inflationFactor;
+
+  /**
+   * Split a pot at retirement into upfront tax-free cash and the drawdown pot. Any tax-free
+   * entitlement not taken upfront is spread across withdrawals as a tax-free share of each one.
+   */
+  function splitPot(total) {
+    const entitlement = Math.min((MAX_TAX_FREE_PCT / 100) * total, lumpSumCap);
+    const lumpSum = Math.min(p * total, lumpSumCap);
+    const drawdownPot = total - lumpSum;
+    const taxFreeShare = drawdownPot > 0 ? Math.max(0, entitlement - lumpSum) / drawdownPot : 0;
+    return { total, lumpSum, drawdownPot, taxFreeShare };
+  }
+
+  /** Total pot at retirement whose drawdown pot (after any lump sum) equals `drawdownPot`. */
+  function totalForDrawdownPot(drawdownPot) {
+    if (!Number.isFinite(drawdownPot)) return Infinity;
+    const uncapped = drawdownPot / (1 - p);
+    return p * uncapped <= lumpSumCap ? uncapped : drawdownPot + lumpSumCap;
+  }
+
+  /**
+   * Smallest pot at retirement whose drawdown pot funds `withdrawalsFor(taxFreeShare)`
+   * (one amount per retirement year) until the target age. Solved by bisection because the
+   * tax-free share depends on the pot size once the Lump Sum Allowance applies.
+   */
+  function solvePot(withdrawalsFor) {
+    const shortfall = (total) => {
+      const { drawdownPot, taxFreeShare } = splitPot(total);
+      return presentValue(withdrawalsFor(taxFreeShare), r) - drawdownPot;
+    };
+    let lo = 0;
+    let hi = 1;
+    while (shortfall(hi) > 0 && hi < 1e15) hi *= 2;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi) / 2;
+      if (shortfall(mid) > 0) lo = mid;
+      else hi = mid;
+    }
+    const split = splitPot(hi);
+    return { ...split, withdrawals: withdrawalsFor(split.taxFreeShare) };
+  }
+
+  const retirementAges = Array.from({ length: yearsInRetirement }, (_, k) => retirementAge + k);
+  const desiredWithdrawalAt = (age) => Math.max(0, annualDrawdown - statePensionAt(age));
+  // Largest withdrawal keeping taxable income (taxable share of withdrawal + State Pension)
+  // within the basic-rate band.
+  const maxBasicRateWithdrawalAt = (age, taxFreeShare) =>
+    Math.max(0, thresholdAt(age) - statePensionAt(age)) / (1 - taxFreeShare);
+
+  // --- Criterion 1: Sufficiency — fund the desired income every year until the target age ---
+  const sufficiency = solvePot(() => retirementAges.map(desiredWithdrawalAt));
+
+  // --- Criterion 2: 40% tax band — never withdraw more than keeps you in the basic-rate band ---
+  const plan = solvePot((taxFreeShare) =>
+    retirementAges.map((age) =>
+      Math.min(desiredWithdrawalAt(age), maxBasicRateWithdrawalAt(age, taxFreeShare)),
+    ),
+  );
+  const taxBreachesThreshold = plan.total < sufficiency.total - 0.01;
+  const triggeringCriterion = taxBreachesThreshold ? 'tax' : 'sufficiency';
+
+  const incomePlan = retirementAges.map((age, k) => {
+    const withdrawal = plan.withdrawals[k];
+    const sp = statePensionAt(age);
+    return {
+      age,
+      withdrawal,
+      statePension: sp,
+      income: withdrawal + sp,
+      taxableIncome: withdrawal * (1 - plan.taxFreeShare) + sp,
+      threshold: thresholdAt(age),
+      capped: withdrawal < desiredWithdrawalAt(age) - 0.01,
+    };
+  });
+  const firstTaxCappedAge = incomePlan.find((year) => year.capped)?.age ?? null;
+  const effectiveIncomeFirstYear = incomePlan[0]?.income ?? 0;
+
+  const planWithdrawalAt = (age) => plan.withdrawals[age - retirementAge] ?? desiredWithdrawalAt(age);
+
+  // Sanity check: the planned drawdown pot should run out at the target age.
+  const actualDepletionAge = depletionAge(plan.drawdownPot, retirementAge, r, planWithdrawalAt);
+
+  // --- Effective target, and the moving target before retirement ---
+  const effectivePotAtRetirement = plan.total;
+  const stopPotToday = discountToToday(effectivePotAtRetirement);
+  const alreadyAtTarget = currentPot >= stopPotToday;
+  // The target grows at the real rate r each year you keep contributing.
+  const targetMilestones = [5, 10]
+    .map((n) => currentAge + n)
+    .filter((age) => age < retirementAge)
+    .map((age) => ({ age, pot: effectivePotAtRetirement / Math.pow(1 + r, retirementAge - age) }));
+
+  // --- Current pot, if contributions stopped today ---
+  const projectedPotAtRetirement = currentPot * Math.pow(1 + r, yearsToRetirement);
+  const projected = splitPot(projectedPotAtRetirement);
+  const depletionAgeCurrentPot = depletionAge(projected.drawdownPot, retirementAge, r, desiredWithdrawalAt);
 
   // --- Perpetuity pot (infinite drawdown) ---
-  // The pot at which annual real growth equals the drawdown — money never runs out.
-  // Formula: P = D / r  (only meaningful when r > 0)
-  const infinitePotAtRetirement = r > 0 ? annualDrawdown / r : Infinity;
-  const infinitePotToday =
-    infinitePotAtRetirement === Infinity || yearsToRetirement <= 0
-      ? infinitePotAtRetirement
-      : infinitePotAtRetirement / Math.pow(1 + r, yearsToRetirement);
+  // Funds the full income until State Pension age, then the reduced withdrawal forever.
+  const yearsBeforeStatePension = includeStatePension ? Math.max(0, spAge - retirementAge) : 0;
+  const perpetualWithdrawal = desiredWithdrawalAt(retirementAge + yearsBeforeStatePension);
+  const infiniteDrawdownPot =
+    r > 0
+      ? presentValueOfAnnuity(annualDrawdown, r, yearsBeforeStatePension) +
+        perpetualWithdrawal / r / Math.pow(1 + r, yearsBeforeStatePension)
+      : Infinity;
+  const infinitePotAtRetirement = totalForDrawdownPot(infiniteDrawdownPot);
+  const infinitePotToday = discountToToday(infinitePotAtRetirement);
+
+  // --- Chart series (real terms) ---
+  const targetSeries = potSeries({
+    startAge: currentAge,
+    endAge: targetAge,
+    startPot: stopPotToday,
+    retirementAge,
+    lumpSum: plan.lumpSum,
+    r,
+    withdrawalAt: planWithdrawalAt,
+  });
+  const currentSeriesEndAge =
+    depletionAgeCurrentPot === Infinity
+      ? targetAge
+      : Math.min(Math.ceil(depletionAgeCurrentPot), targetAge + 5);
+  const currentSeries = potSeries({
+    startAge: currentAge,
+    endAge: currentSeriesEndAge,
+    startPot: currentPot,
+    retirementAge,
+    lumpSum: projected.lumpSum,
+    r,
+    withdrawalAt: desiredWithdrawalAt,
+  });
 
   return {
     yearsToRetirement,
     yearsInRetirement,
-    r,          // real growth rate
+    r, // real growth rate
     r_nominal,
     inflation,
 
-    // State pension
+    // State Pension
     includeStatePension,
     statePension,
-    phase1Years,
-    phase2Years,
-    effectiveTaxThresholdPhase2,
+    statePensionAge: spAge,
+    phase1Years: retirementAges.filter((age) => statePensionAt(age) === 0).length,
+    phase2Years: retirementAges.filter((age) => statePensionAt(age) > 0).length,
 
     // Criterion 1
-    sufficiencyPotAtRetirement,
+    sufficiencyPotAtRetirement: sufficiency.total,
+    sufficiencyPotToday: discountToToday(sufficiency.total),
+    sufficiencyLumpSum: sufficiency.lumpSum,
 
     // Criterion 2
     taxBreachesThreshold,
-    taxPotAtRetirement,
+    firstTaxCappedAge,
+    thresholdAtRetirement: thresholdAt(retirementAge),
+    taxFreeShare: plan.taxFreeShare,
 
     // Effective target
     effectivePotAtRetirement,
-    effectiveDrawdown,
     triggeringCriterion,
+    incomePlan,
+    effectiveIncomeFirstYear,
 
     // Lump sum
     lumpSumPct,
-    lumpSumAmount,
-    lumpSumCapped,
-    drawdownPotAtRetirement,
+    lumpSumAmount: plan.lumpSum,
+    lumpSumCapped: p > 0 && p * plan.total > lumpSumCap,
+    drawdownPotAtRetirement: plan.drawdownPot,
 
     // Depletion ages
     targetAge,
@@ -236,19 +322,26 @@ export function calculatePensionStop({
 
     // Stop pot in today's money
     stopPotToday,
+    targetMilestones,
 
     // Current trajectory
     projectedPotAtRetirement,
+    projectedLumpSum: projected.lumpSum,
 
     // Nominal (future £) at retirement
-    nominalDrawdownAtRetirement,
-    nominalThresholdAtRetirement,
-    nominalEffectiveDrawdown,
-    nominalLumpSumAmount,
+    nominalPotAtRetirement: effectivePotAtRetirement * inflationFactor,
+    nominalProjectedPotAtRetirement: projectedPotAtRetirement * inflationFactor,
+    nominalIncomeFirstYear: effectiveIncomeFirstYear * inflationFactor,
+    nominalThresholdAtRetirement: thresholdAt(retirementAge) * inflationFactor,
+    nominalLumpSumAmount: plan.lumpSum * inflationFactor,
 
     // Perpetuity (infinite drawdown) pot
     infinitePotAtRetirement,
     infinitePotToday,
+
+    // Chart series (real terms)
+    targetSeries,
+    currentSeries,
 
     // Final recommendation
     alreadyAtTarget,
