@@ -2,7 +2,7 @@ import { useState } from 'react';
 import InputForm from './components/InputForm';
 import ResultPanel from './components/ResultPanel';
 import PotChart from './components/PotChart';
-import { calculatePensionStop } from './utils/pensionCalc';
+import { calculatePensionStop, TAX_YEAR } from './utils/pensionCalc';
 import './styles/app.css';
 
 export default function App() {
@@ -39,7 +39,7 @@ export default function App() {
       </main>
 
       <footer className="app-footer">
-        <p>Based on UK 2024/25 tax thresholds · Not financial advice</p>
+        <p>Based on UK {TAX_YEAR} rules · Not financial advice</p>
       </footer>
     </div>
   );
